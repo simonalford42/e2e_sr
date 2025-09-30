@@ -5,24 +5,16 @@
 # LICENSE file in the root directory of this source tree.
 
 from abc import ABC, abstractmethod
-from ast import parse
-from operator import length_hint, xor
 
-# from turtle import degrees
 import numpy as np
-import math
 import scipy.special
 import copy
 from logging import getLogger
-import time
-from numpy.compat.py3k import npy_load_module
-from sympy import Min
 from symbolicregression.envs import encoders
 from collections import defaultdict
 from scipy.stats import special_ortho_group
 
 logger = getLogger()
-import random
 
 operators_real = {
     "add": 2,
@@ -357,6 +349,35 @@ class RandomFunctions(Generator):
             o for o in self.operators.keys() if np.abs(self.operators[o]) == 2
         ] + self.extra_binary_operators
 
+        # Apply operator selection controls
+        allowed_unaries = (
+            set(self.params.allowed_unary_operators.split(","))
+            if hasattr(self.params, "allowed_unary_operators") and self.params.allowed_unary_operators != ""
+            else None
+        )
+        allowed_binaries = (
+            set(self.params.allowed_binary_operators.split(","))
+            if hasattr(self.params, "allowed_binary_operators") and self.params.allowed_binary_operators != ""
+            else None
+        )
+        disabled_ops = (
+            set(self.params.disabled_operators.split(","))
+            if hasattr(self.params, "disabled_operators") and self.params.disabled_operators != ""
+            else set()
+        )
+
+        if allowed_unaries is not None:
+            self.unaries = [op for op in self.unaries if op in allowed_unaries]
+        if allowed_binaries is not None:
+            self.binaries = [op for op in self.binaries if op in allowed_binaries]
+        if disabled_ops:
+            self.unaries = [op for op in self.unaries if op not in disabled_ops]
+            self.binaries = [op for op in self.binaries if op not in disabled_ops]
+
+        # Ensure we have at least one operator of each arity
+        assert len(self.unaries) > 0, "No unary operators available after filtering"
+        assert len(self.binaries) > 0, "No binary operators available after filtering"
+
         unaries_probabilities = []
         for op in self.unaries:
             if op not in self.operators_dowsample_ratio:
@@ -541,21 +562,36 @@ class RandomFunctions(Generator):
         if nb_binary_ops is None:
             min_binary_ops = self.min_binary_ops_per_dim * input_dimension
             max_binary_ops = self.max_binary_ops_per_dim * input_dimension
-            nb_binary_ops_to_use = [
-                rng.randint(
-                    min_binary_ops, self.params.max_binary_ops_offset + max_binary_ops
-                )
-                for dim in range(output_dimension)
-            ]
+            upper_exclusive = self.params.max_binary_ops_offset + max_binary_ops
+            if getattr(self.params, "complexity", None) is not None:
+                c = float(self.params.complexity)
+                c = 0.0 if c < 0 else (1.0 if c > 1 else c)
+                # Scale within [min, upper_exclusive)
+                scaled = int(min_binary_ops + np.floor(c * max(0, (upper_exclusive - min_binary_ops - 1))))
+                scaled = max(min_binary_ops, min(scaled, upper_exclusive - 1))
+                nb_binary_ops_to_use = [scaled for _ in range(output_dimension)]
+            else:
+                nb_binary_ops_to_use = [
+                    rng.randint(min_binary_ops, upper_exclusive)
+                    for _ in range(output_dimension)
+                ]
         elif isinstance(nb_binary_ops, int):
             nb_binary_ops_to_use = [nb_binary_ops for _ in range(output_dimension)]
         else:
             nb_binary_ops_to_use = nb_binary_ops
         if nb_unary_ops is None:
-            nb_unary_ops_to_use = [
-                rng.randint(self.min_unary_ops, self.max_unary_ops + 1)
-                for dim in range(output_dimension)
-            ]
+            if getattr(self.params, "complexity", None) is not None:
+                c = float(self.params.complexity)
+                c = 0.0 if c < 0 else (1.0 if c > 1 else c)
+                low_u, high_u_excl = self.min_unary_ops, self.max_unary_ops + 1
+                scaled_u = int(low_u + np.floor(c * max(0, (high_u_excl - low_u - 1))))
+                scaled_u = max(low_u, min(scaled_u, high_u_excl - 1))
+                nb_unary_ops_to_use = [scaled_u for _ in range(output_dimension)]
+            else:
+                nb_unary_ops_to_use = [
+                    rng.randint(self.min_unary_ops, self.max_unary_ops + 1)
+                    for _ in range(output_dimension)
+                ]
         elif isinstance(nb_unary_ops, int):
             nb_unary_ops_to_use = [nb_unary_ops for _ in range(output_dimension)]
         else:
@@ -565,11 +601,11 @@ class RandomFunctions(Generator):
             tree = self.generate_tree(rng, nb_binary_ops_to_use[i], input_dimension)
             tree = self.add_unaries(rng, tree, nb_unary_ops_to_use[i])
             ##Adding constants
-            if self.params.reduce_num_constants:
-                tree = self.add_prefactors(rng, tree)
-            else:
-                tree = self.add_linear_transformations(rng, tree, target=self.variables)
-                tree = self.add_linear_transformations(rng, tree, target=self.unaries)
+            # if self.params.reduce_num_constants:
+            #     tree = self.add_prefactors(rng, tree)
+            # else:
+            #     tree = self.add_linear_transformations(rng, tree, target=self.variables)
+            #     tree = self.add_linear_transformations(rng, tree, target=self.unaries)
             trees.append(tree)
         tree = NodeList(trees)
 

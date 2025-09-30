@@ -540,6 +540,25 @@ class FunctionEnvironment(object):
             default="div_0,arcsin_0,arccos_0,tan_0.2,arctan_0.2,sqrt_5,pow2_3,inv_3",
             help="Which operator to remove",
         )
+        # Operator selection controls
+        parser.add_argument(
+            "--allowed_unary_operators",
+            type=str,
+            default="",
+            help="Comma-separated whitelist of unary operators to use (empty means default set)",
+        )
+        parser.add_argument(
+            "--allowed_binary_operators",
+            type=str,
+            default="",
+            help="Comma-separated whitelist of binary operators to use (empty means default set)",
+        )
+        parser.add_argument(
+            "--disabled_operators",
+            type=str,
+            default="",
+            help="Comma-separated list of operators to exclude from generation",
+        )
         parser.add_argument(
             "--operators_to_not_repeat",
             type=str,
@@ -688,6 +707,15 @@ class FunctionEnvironment(object):
             type=int,
             default=10,
             help="Max number of centroids for the input distribution",
+        )
+
+        # Overall complexity control (0..1). If set, scales number of ops
+        # chosen for trees within min/max ranges.
+        parser.add_argument(
+            "--complexity",
+            type=float,
+            default=None,
+            help="Optional complexity knob in [0,1] scaling operator counts (None to disable)",
         )
 
         parser.add_argument(
