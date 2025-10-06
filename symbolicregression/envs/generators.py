@@ -403,6 +403,8 @@ class RandomFunctions(Generator):
             2 * self.max_binary_ops_per_dim * self.max_input_dimension
         )
 
+        # Base constant pool (integers and math constants). If user provides
+        # extra constants, we will use only those for constant leaves.
         self.constants = [
             str(i) for i in range(-self.max_int, self.max_int + 1) if i != 0
         ]
@@ -417,9 +419,13 @@ class RandomFunctions(Generator):
         self.constants.remove("CONSTANT")
 
         if self.params.extra_constants is not None:
-            self.extra_constants = self.params.extra_constants.split(",")
+            self.extra_constants = [c for c in self.params.extra_constants.split(",") if c != ""]
         else:
             self.extra_constants = []
+
+        # If user passed extra constants, enforce exclusivity: use only those
+        # for constant generation (no integers or math constants).
+        self.only_use_extra_constants = len(self.extra_constants) > 0
 
         self.general_encoder = encoders.GeneralEncoder(
             params, self.symbols, all_operators
@@ -470,6 +476,8 @@ class RandomFunctions(Generator):
         return str(constant)
 
     def generate_int(self, rng):
+        if self.only_use_extra_constants and len(self.extra_constants) > 0:
+            return str(rng.choice(self.extra_constants))
         return str(rng.choice(self.constants + self.extra_constants))
 
     def generate_leaf(self, rng, input_dimension):
